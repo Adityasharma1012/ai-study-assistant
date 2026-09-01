@@ -73,7 +73,7 @@ export const StudyPlannerView = ({ setActiveTab }) => {
     d.setDate(d.getDate() + 5);
     return d.toISOString().split('T')[0];
   });
-  const [availableHours, setAvailableHours] = useState(4);
+  const [hoursPerDay, setHoursPerDay] = useState(4);
   const [difficulty, setDifficulty] = useState('Intermediate');
   const [isGenerating, setIsGenerating] = useState(false);
 
