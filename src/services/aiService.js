@@ -10,21 +10,12 @@
  * Ready to connect to a real AI API endpoint (Gemini / OpenAI) via backend or direct API calls.
  */
 
-// Get API key dynamically from environment
-const getApiKey = () => {
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
-    if (import.meta.env.GEMINI_API_KEY) return import.meta.env.GEMINI_API_KEY;
-  }
-  if (typeof process !== 'undefined' && process.env) {
-    if (process.env.VITE_GEMINI_API_KEY) return process.env.VITE_GEMINI_API_KEY;
-    if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
-  }
-  return '';
-};
+// Optional backend endpoint for secure server-side Gemini API calls (keeps API keys off static frontend)
+const AI_BACKEND_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_BACKEND_URL) || '';
 
 // Simulated realistic response latency
-const simulateDelay = (ms = 800) => new Promise((resolve) => setTimeout(resolve, ms));
+const simulateDelay = (ms = 700) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Intelligent Mock Response Database for common academic student questions
@@ -285,52 +276,36 @@ Input Scenario -> Transform Step 1 -> Verification -> Final Output State
  * 1. Ask AI Assistant (Interactive Chat)
  */
 export async function askAI(prompt, history = []) {
-  const apiKey = getApiKey();
-  // If a valid Gemini API key is configured, query Google Gemini API
-  if (apiKey && typeof fetch !== 'undefined' && !apiKey.startsWith('your_')) {
+  // If a secure backend API endpoint is configured, forward request to server
+  if (AI_BACKEND_URL && typeof fetch !== 'undefined') {
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  {
-                    text: `You are an expert AI Study Assistant for Computer Science & Engineering students. Answer the following question clearly with structured markdown, key concepts, code snippets, and study tips:\n\n${prompt}`,
-                  },
-                ],
-              },
-            ],
-          }),
-        }
-      );
+      const response = await fetch(`${AI_BACKEND_URL}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, history }),
+      });
 
       if (response.ok) {
         const data = await response.json();
-        const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (candidateText) {
+        if (data.text) {
           return {
-            text: candidateText,
+            text: data.text,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            source: 'Gemini Live API',
+            source: 'Gemini Backend API',
           };
         }
       }
     } catch (e) {
-      console.warn('Gemini API query fallback to Academic Engine:', e);
+      console.warn('Backend API query fallback to Academic Engine:', e);
     }
   }
 
-  await simulateDelay(600 + Math.random() * 400);
+  await simulateDelay(600 + Math.random() * 300);
   const responseText = generateContextualAnswer(prompt);
   return {
     text: responseText,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    source: 'Academic Engine',
+    source: 'Academic Study Engine',
   };
 }
 
