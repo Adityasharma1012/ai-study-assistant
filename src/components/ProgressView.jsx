@@ -6,6 +6,7 @@ import {
   Award,
   BookOpen,
   CheckCircle2,
+  Check,
   BarChart3,
   Calendar,
   Sparkles,
