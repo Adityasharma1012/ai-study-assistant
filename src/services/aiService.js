@@ -1,18 +1,54 @@
 /**
  * AI Study Assistant Service
- * 
- * Provides mock implementations for AI capabilities:
- * - askAI: Interactive academic problem solver and concept explainer
- * - generateNotes: Structured notes with 7 core academic sections
- * - generateQuiz: Adaptive quizzes and diagnostic questions
- * - generateStudyPlan: Exam-aligned daily task schedule builder
- * 
- * Ready to connect to a real AI API endpoint (Gemini / OpenAI) via backend or direct API calls.
+ *
+ * Dual-mode academic AI layer:
+ * 1. Live Backend Mode (when VITE_AI_BACKEND_URL is configured): securely calls
+ *    serverless /api/* endpoints powered by Google Gemini on Vercel.
+ * 2. Offline / Demo Fallback Mode: built-in Academic Study Engine with
+ *    pre-seeded Computer Science content.
  */
 
-// Optional backend endpoint for secure server-side Gemini API calls (keeps API keys off static frontend)
-const AI_BACKEND_URL =
+const RAW_BACKEND_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_BACKEND_URL) || '';
+const AI_BACKEND_URL = String(RAW_BACKEND_URL).trim().replace(/\/+$/, '');
+
+function buildEndpointUrl(route) {
+  if (!AI_BACKEND_URL) return '';
+  const cleanRoute = String(route).replace(/^\/+/, '');
+  if (AI_BACKEND_URL.endsWith('/api')) {
+    return `${AI_BACKEND_URL}/${cleanRoute}`;
+  }
+  return `${AI_BACKEND_URL}/api/${cleanRoute}`;
+}
+
+async function postToBackend(route, payload, timeoutMs = 25000) {
+  const url = buildEndpointUrl(route);
+  if (!url || typeof fetch === 'undefined') return null;
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      throw new Error(`Backend ${route} HTTP ${response.status}: ${errBody}`);
+    }
+
+    return await response.json();
+  } catch (err) {
+    console.warn(`Backend /api/${route} fallback to Academic Engine:`, err);
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 // Simulated realistic response latency
 const simulateDelay = (ms = 700) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -276,28 +312,13 @@ Input Scenario -> Transform Step 1 -> Verification -> Final Output State
  * 1. Ask AI Assistant (Interactive Chat)
  */
 export async function askAI(prompt, history = []) {
-  // If a secure backend API endpoint is configured, forward request to server
-  if (AI_BACKEND_URL && typeof fetch !== 'undefined') {
-    try {
-      const response = await fetch(`${AI_BACKEND_URL}/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, history }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.text) {
-          return {
-            text: data.text,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            source: 'Gemini Backend API',
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Backend API query fallback to Academic Engine:', e);
-    }
+  const data = await postToBackend('ask', { prompt, history });
+  if (data?.text) {
+    return {
+      text: data.text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      source: data.source || 'Gemini Backend API',
+    };
   }
 
   await simulateDelay(600 + Math.random() * 300);
@@ -313,8 +334,6 @@ export async function askAI(prompt, history = []) {
  * 2. Generate Structured Notes (7 Core Academic Sections)
  */
 export async function generateNotes(arg1, arg2 = "Computer Science", arg3 = "Intermediate", arg4 = "Standard") {
-  await simulateDelay(900 + Math.random() * 400);
-
   let topic = "General Computer Science";
   let subject = "Computer Science";
   let difficulty = "Intermediate";
@@ -333,6 +352,62 @@ export async function generateNotes(arg1, arg2 = "Computer Science", arg3 = "Int
   }
 
   const cleanTopic = String(topic).trim();
+  const wordCount = length === "Concise" ? 450 : length === "Deep Dive" ? 1200 : 750;
+  const readTimeMinutes = Math.max(2, Math.round(wordCount / 200));
+
+  const buildNotePayload = ({ overview, keyConcepts, definitions, examples, keyPoints, summary, questions, source }) => ({
+    id: `note-${Date.now()}`,
+    title: cleanTopic,
+    subject: subject,
+    difficulty: difficulty,
+    length: length,
+    source,
+    createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    readTime: `${readTimeMinutes} min read`,
+    overview,
+    keyConcepts,
+    definitions,
+    examples,
+    keyPoints,
+    summary,
+    questions,
+    sections: {
+      overview,
+      keyConcepts,
+      importantDefinitions: definitions,
+      examples,
+      keyPoints,
+      summary,
+      importantQuestions: questions,
+    },
+    rawMarkdown: `# ${cleanTopic} - Study Notes\n**Subject:** ${subject} | **Difficulty:** ${difficulty} | **Date:** ${new Date().toLocaleDateString()}\n\n## 1. Topic Overview\n${overview}\n\n## 2. Key Concepts\n${keyConcepts.map(c => `- **${c.name}:** ${c.desc}`).join('\n')}\n\n## 3. Important Definitions\n${definitions.map(d => `- **${d.term}:** ${d.definition}`).join('\n')}\n\n## 4. Examples\n${examples.map(e => `### ${e.title}\n\`\`\`\n${e.code}\n\`\`\``).join('\n\n')}\n\n## 5. Key Points\n${keyPoints.map(p => `- ${p}`).join('\n')}\n\n## 6. Summary\n${summary}\n\n## 7. Important Questions\n${questions.map((q, i) => `${i+1}. **Q:** ${q.q}\n   **A:** ${q.a}`).join('\n\n')}`
+  });
+
+  const liveNotes = await postToBackend('notes', { topic: cleanTopic, subject, difficulty, length });
+  if (
+    liveNotes &&
+    typeof liveNotes.overview === 'string' &&
+    Array.isArray(liveNotes.keyConcepts) &&
+    Array.isArray(liveNotes.definitions) &&
+    Array.isArray(liveNotes.examples) &&
+    Array.isArray(liveNotes.keyPoints) &&
+    typeof liveNotes.summary === 'string' &&
+    Array.isArray(liveNotes.questions)
+  ) {
+    return buildNotePayload({
+      overview: liveNotes.overview,
+      keyConcepts: liveNotes.keyConcepts,
+      definitions: liveNotes.definitions,
+      examples: liveNotes.examples,
+      keyPoints: liveNotes.keyPoints,
+      summary: liveNotes.summary,
+      questions: liveNotes.questions,
+      source: liveNotes.source || 'Gemini Backend API',
+    });
+  }
+
+  await simulateDelay(900 + Math.random() * 400);
+
   const lowerTopic = cleanTopic.toLowerCase();
 
   let overview = "";
@@ -476,17 +551,7 @@ function execute_${cleanTopic.toLowerCase().replace(/[^a-z0-9]/g, '_')}(inputDat
     ];
   }
 
-  const wordCount = length === "Concise" ? 450 : length === "Deep Dive" ? 1200 : 750;
-  const readTimeMinutes = Math.max(2, Math.round(wordCount / 200));
-
-  return {
-    id: `note-${Date.now()}`,
-    title: cleanTopic,
-    subject: subject,
-    difficulty: difficulty,
-    length: length,
-    createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    readTime: `${readTimeMinutes} min read`,
+  return buildNotePayload({
     overview,
     keyConcepts,
     definitions,
@@ -494,25 +559,14 @@ function execute_${cleanTopic.toLowerCase().replace(/[^a-z0-9]/g, '_')}(inputDat
     keyPoints,
     summary,
     questions,
-    sections: {
-      overview,
-      keyConcepts,
-      importantDefinitions: definitions,
-      examples,
-      keyPoints,
-      summary,
-      importantQuestions: questions,
-    },
-    rawMarkdown: `# ${cleanTopic} - Study Notes\n**Subject:** ${subject} | **Difficulty:** ${difficulty} | **Date:** ${new Date().toLocaleDateString()}\n\n## 1. Topic Overview\n${overview}\n\n## 2. Key Concepts\n${keyConcepts.map(c => `- **${c.name}:** ${c.desc}`).join('\n')}\n\n## 3. Important Definitions\n${definitions.map(d => `- **${d.term}:** ${d.definition}`).join('\n')}\n\n## 4. Examples\n${examples.map(e => `### ${e.title}\n\`\`\`\n${e.code}\n\`\`\``).join('\n\n')}\n\n## 5. Key Points\n${keyPoints.map(p => `- ${p}`).join('\n')}\n\n## 6. Summary\n${summary}\n\n## 7. Important Questions\n${questions.map((q, i) => `${i+1}. **Q:** ${q.q}\n   **A:** ${q.a}`).join('\n\n')}`
-  };
+    source: 'Academic Study Engine',
+  });
 }
 
 /**
  * 3. Generate Multiple-Choice Quiz with Explanations & Weak Topic Diagnostics
  */
 export async function generateQuiz(arg1, arg2, arg3 = 5, arg4 = "Intermediate") {
-  await simulateDelay(800 + Math.random() * 400);
-
   let subject = "CS301: Design & Analysis of Algorithms";
   let topic = "Dynamic Programming";
   let count = 5;
@@ -531,6 +585,52 @@ export async function generateQuiz(arg1, arg2, arg3 = 5, arg4 = "Intermediate") 
   }
 
   const cleanTopic = String(topic || "General CS").trim();
+  const requestedCount = Math.max(1, Math.min(Number(count) || 5, 10));
+
+  const liveQuiz = await postToBackend('quiz', {
+    subject,
+    topic: cleanTopic,
+    count: requestedCount,
+    difficulty,
+  });
+
+  if (liveQuiz && Array.isArray(liveQuiz.questions) && liveQuiz.questions.length > 0) {
+    const formattedQuestions = liveQuiz.questions
+      .filter((q) => q && typeof q.question === 'string' && Array.isArray(q.options) && q.options.length >= 2)
+      .slice(0, requestedCount)
+      .map((q, idx) => {
+        const safeIndex =
+          Number.isInteger(q.correctIndex) && q.correctIndex >= 0 && q.correctIndex < q.options.length
+            ? q.correctIndex
+            : 0;
+        return {
+          id: `q-${idx + 1}`,
+          questionNumber: idx + 1,
+          topic: q.topic || cleanTopic,
+          question: q.question,
+          options: q.options.slice(0, 4),
+          correctIndex: safeIndex,
+          correctAnswer: q.options[safeIndex],
+          explanation: q.explanation || 'Review the core concept behind this question.',
+        };
+      });
+
+    if (formattedQuestions.length > 0) {
+      return {
+        id: `quiz-${Date.now()}`,
+        subject,
+        topic: cleanTopic,
+        difficulty,
+        source: liveQuiz.source || 'Gemini Backend API',
+        totalQuestions: formattedQuestions.length,
+        timeLimitMinutes: Math.max(3, formattedQuestions.length * 2),
+        createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        questions: formattedQuestions,
+      };
+    }
+  }
+
+  await simulateDelay(800 + Math.random() * 400);
 
   const questionBank = [
     {
@@ -625,7 +725,6 @@ export async function generateQuiz(arg1, arg2, arg3 = 5, arg4 = "Intermediate") 
     }
   ];
 
-  const requestedCount = Math.min(count, 10);
   const shuffled = [...questionBank].sort(() => 0.5 - Math.random());
   const selectedQuestions = shuffled.slice(0, requestedCount).map((q, idx) => ({
     ...q,
@@ -639,6 +738,7 @@ export async function generateQuiz(arg1, arg2, arg3 = 5, arg4 = "Intermediate") 
     subject,
     topic: cleanTopic,
     difficulty,
+    source: 'Academic Study Engine',
     totalQuestions: selectedQuestions.length,
     timeLimitMinutes: Math.max(3, selectedQuestions.length * 2),
     createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -650,8 +750,6 @@ export async function generateQuiz(arg1, arg2, arg3 = 5, arg4 = "Intermediate") 
  * 4. Generate Comprehensive Day-by-Day Study Plan & Actionable Tasks
  */
 export async function generateStudyPlan(arg1, arg2, arg3 = 4, arg4 = 4, arg5 = "Intermediate") {
-  await simulateDelay(900 + Math.random() * 400);
-
   let subject = "CS301: Design & Analysis of Algorithms";
   let topics = "Dynamic Programming, Graph Algorithms";
   let examDateOrDays = 4;
@@ -679,7 +777,7 @@ export async function generateStudyPlan(arg1, arg2, arg3 = 4, arg4 = 4, arg5 = "
   } else if (typeof examDateOrDays === 'string' && examDateOrDays) {
     const parsedDays = Math.ceil((new Date(examDateOrDays).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     if (!isNaN(parsedDays) && parsedDays > 0) {
-      daysCount = Math.min(14, parsedDays);
+      daysCount = Math.max(2, Math.min(14, parsedDays));
     }
   }
 
@@ -692,11 +790,65 @@ export async function generateStudyPlan(arg1, arg2, arg3 = 4, arg4 = 4, arg5 = "
     ? topicList
     : ["Core Foundation & Theory", "Problem Solving & Analysis", "High-Yield Practice", "Mock Examination"];
 
-  const taskTypes = ["Deep Theory Review", "Algorithm Problem Solving", "AI Quiz & Active Recall", "Formula & Diagram Blitz", "Timed Mock Exam"];
-  const priorities = ["High", "High", "Medium", "Normal"];
+  const baseDate = new Date();
+  const shortSubject = subject.split(':')[0].trim();
+
+  const livePlan = await postToBackend('study-plan', {
+    subject,
+    topics: primaryTopics.join(', '),
+    daysCount,
+    hoursPerDay,
+    difficulty,
+  });
+
+  if (livePlan && Array.isArray(livePlan.tasks) && livePlan.tasks.length > 0) {
+    const now = Date.now();
+    const formattedTasks = livePlan.tasks.map((t, idx) => {
+      const dayNumber = Math.max(1, Math.min(daysCount, Number(t.dayNumber) || Math.floor(idx / 2) + 1));
+      const targetDate = new Date();
+      targetDate.setDate(baseDate.getDate() + (dayNumber - 1));
+      const dateFormatted = targetDate.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      const dayLabel = dayNumber === 1 ? 'Today' : dayNumber === 2 ? 'Tomorrow' : `Day ${dayNumber}`;
+      return {
+        id: `task-gen-${now}-${idx}`,
+        title: t.title || `${shortSubject} — Study Session ${idx + 1}`,
+        subject: shortSubject,
+        topic: t.topic || primaryTopics[(dayNumber - 1) % primaryTopics.length],
+        date: dateFormatted,
+        dayLabel,
+        dayNumber,
+        priority: ['High', 'Medium', 'Normal'].includes(t.priority) ? t.priority : 'Medium',
+        estimatedTime: t.estimatedTime || `${Math.round(hoursPerDay * 0.5 * 60)} mins`,
+        timeRange: t.timeRange || '09:00 AM - 11:00 AM',
+        type: t.type || 'Deep Theory Review',
+        completed: false,
+      };
+    });
+
+    return {
+      id: `plan-${now}`,
+      subject,
+      topics: primaryTopics,
+      daysCount,
+      hoursPerDay,
+      totalTargetHours: daysCount * hoursPerDay,
+      difficulty,
+      source: livePlan.source || 'Gemini Backend API',
+      createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      tasks: formattedTasks,
+      summary:
+        livePlan.summary ||
+        `Personalized ${daysCount}-day revision plan allocating ${daysCount * hoursPerDay} total study hours.`,
+    };
+  }
+
+  await simulateDelay(900 + Math.random() * 400);
 
   const generatedTasks = [];
-  const baseDate = new Date();
 
   for (let day = 0; day < daysCount; day++) {
     const targetDate = new Date();
@@ -714,8 +866,8 @@ export async function generateStudyPlan(arg1, arg2, arg3 = 4, arg4 = 4, arg5 = "
     // Morning Session Task
     generatedTasks.push({
       id: `task-gen-${Date.now()}-${day}-1`,
-      title: `${subject.split(':')[0]} — Deep Theory: ${dayTopic}`,
-      subject: subject.split(':')[0].trim(),
+      title: `${shortSubject} — Deep Theory: ${dayTopic}`,
+      subject: shortSubject,
       topic: dayTopic,
       date: dateFormatted,
       dayLabel,
@@ -731,7 +883,7 @@ export async function generateStudyPlan(arg1, arg2, arg3 = 4, arg4 = 4, arg5 = "
     generatedTasks.push({
       id: `task-gen-${Date.now()}-${day}-2`,
       title: `Practice 10 Quiz Questions & Active Recall: ${dayTopic}`,
-      subject: subject.split(':')[0].trim(),
+      subject: shortSubject,
       topic: dayTopic,
       date: dateFormatted,
       dayLabel,
@@ -752,6 +904,7 @@ export async function generateStudyPlan(arg1, arg2, arg3 = 4, arg4 = 4, arg5 = "
     hoursPerDay,
     totalTargetHours: daysCount * hoursPerDay,
     difficulty,
+    source: 'Academic Study Engine',
     createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     tasks: generatedTasks,
     summary: `Personalized ${daysCount}-day revision plan allocating ${daysCount * hoursPerDay} total study hours with balanced theory, coding proofs, and timed practice.`
