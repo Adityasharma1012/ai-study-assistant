@@ -13,12 +13,25 @@ const RAW_BACKEND_URL =
 const AI_BACKEND_URL = String(RAW_BACKEND_URL).trim().replace(/\/+$/, '');
 
 function buildEndpointUrl(route) {
-  if (!AI_BACKEND_URL) return '';
   const cleanRoute = String(route).replace(/^\/+/, '');
-  if (AI_BACKEND_URL.endsWith('/api')) {
-    return `${AI_BACKEND_URL}/${cleanRoute}`;
+  if (AI_BACKEND_URL) {
+    if (AI_BACKEND_URL.endsWith('/api')) {
+      return `${AI_BACKEND_URL}/${cleanRoute}`;
+    }
+    return `${AI_BACKEND_URL}/api/${cleanRoute}`;
   }
-  return `${AI_BACKEND_URL}/api/${cleanRoute}`;
+
+  if (typeof window !== 'undefined' && !window.Capacitor?.isNativePlatform?.()) {
+    const host = window.location.hostname;
+    if (
+      ((host === 'localhost' || host === '127.0.0.1') && window.location.port) ||
+      host.endsWith('.vercel.app')
+    ) {
+      return `/api/${cleanRoute}`;
+    }
+  }
+
+  return '';
 }
 
 async function postToBackend(route, payload, timeoutMs = 25000) {

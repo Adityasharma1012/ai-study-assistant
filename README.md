@@ -330,3 +330,63 @@ AI Study Assistant
 └── Deployment
     └── GitHub Pages
 ```
+
+---
+
+# 📋 Requirements to Run This Project
+
+### 1. System & Software Prerequisites
+- **Node.js:** `v18.0.0` or higher ([Download Node.js](https://nodejs.org/))
+- **npm:** `v9.0.0` or higher (bundled with Node.js)
+- **Google Gemini API Key:** A free API key from [Google AI Studio](https://aistudio.google.com/) for live AI responses
+- **Web Browser:** Modern browser (Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, or Safari)
+- **Python (Optional):** `3.10+` (for Python utility scripts and backend services, see `requirements.txt`)
+- **Android Studio & SDK (Optional):** API Level 29+ (Android 10+) if compiling the mobile APK via Capacitor
+
+---
+
+# 🚀 Getting Started & Setup Guide
+
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/Adityasharma1012/ai-study-assistant.git
+cd ai-study-assistant
+```
+
+### Step 2: Install Node Dependencies
+```bash
+npm install
+```
+
+*(Optional) If working with Python AI services or scripts:*
+```bash
+pip install -r requirements.txt
+```
+
+### Step 3: Configure Environment Variables
+Create a `.env` (or `.env.local`) file in the project root directory:
+```env
+GEMINI_API_KEY=your_google_gemini_api_key_here
+VITE_AI_BACKEND_URL=
+```
+> **Note:** If no backend API key is supplied, the application automatically falls back to its built-in client-side **Academic Study Engine**, ensuring offline study continuity with pre-seeded computer science curriculum modules.
+
+### Step 4: Run the Development Server
+```bash
+npm run dev
+```
+Open **[http://localhost:5173](http://localhost:5173)** in your browser.
+
+### Step 5: Build for Production
+To compile and preview the production build:
+```bash
+npm run build
+npm run preview
+```
+
+### Step 6: Run Local Full-Stack Server (Optional)
+To run the full-stack local server:
+```bash
+npm start
+```
+This initiates `server.mjs` on your configured local port.
