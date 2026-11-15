@@ -30,3 +30,4 @@ jdk21.zip
 # Report build artifacts & temporary office locks
 report_build/
 ~$*
+*.docx
